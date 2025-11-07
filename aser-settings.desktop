@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=AserDev Settings
+GenericName=Settings
+Comment=System settings for AserDev
+Exec=aser-settings
+Terminal=false
+Type=Application
+Categories=Settings;System;Utility;
+StartupNotify=true
+Icon=preferences-system
