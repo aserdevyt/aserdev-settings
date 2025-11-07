@@ -1,0 +1,54 @@
+name: Build aser-settings
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🧠 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Set up CMake
+        uses: lukka/get-cmake@latest
+
+      - name: 🔧 Install build dependencies (GTK4 included)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake pkg-config libgtk-4-dev
+
+      - name: 🧹 Remove old binary if exists
+        run: |
+          if [ -f "aser-settings" ]; then
+            echo "🗑️ Found old aser-settings binary, deleting..."
+            rm -f aser-settings
+          else
+            echo "✅ No old binary found."
+          fi
+
+      - name: 🏗️ Build project
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
+
+      - name: 📦 Move new binary to root
+        run: |
+          BIN_PATH=$(find build -type f -executable -name "aser-settings" | head -n 1)
+          if [ -z "$BIN_PATH" ]; then
+            echo "❌ Couldn't find the built aser-settings binary!"
+            exit 1
+          fi
+          echo "✅ Found binary at $BIN_PATH"
+          mv "$BIN_PATH" ./aser-settings
+
+      - name: 💾 Upload artifact (optional)
+        uses: actions/upload-artifact@v4
+        with:
+          name: aser-settings
+          path: ./aser-settings
