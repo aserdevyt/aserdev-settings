@@ -14,6 +14,8 @@ jobs:
     steps:
       - name: 🧠 Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: true
 
       - name: ⚙️ Set up CMake
         uses: lukka/get-cmake@latest
@@ -47,8 +49,10 @@ jobs:
           echo "✅ Found binary at $BIN_PATH"
           mv "$BIN_PATH" ./aser-settings
 
-      - name: 💾 Upload artifact (optional)
-        uses: actions/upload-artifact@v4
-        with:
-          name: aser-settings
-          path: ./aser-settings
+      - name: 💾 Commit and push new binary
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add aser-settings
+          git commit -m "🤖 Auto-build: update aser-settings binary" || echo "No changes to commit"
+          git push
