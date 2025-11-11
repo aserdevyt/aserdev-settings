@@ -1,7 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"/home/aserdev/dev-settings/build/cmake_install.cmake"
-	],
-	"Parallel" : false
-}

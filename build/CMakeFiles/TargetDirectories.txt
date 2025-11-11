@@ -1,3 +1,0 @@
-/home/aserdev/dev-settings/build/CMakeFiles/aser-settings.dir
-/home/aserdev/dev-settings/build/CMakeFiles/edit_cache.dir
-/home/aserdev/dev-settings/build/CMakeFiles/rebuild_cache.dir
