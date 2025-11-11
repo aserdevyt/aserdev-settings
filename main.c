@@ -379,6 +379,549 @@ static void on_run_command_clicked(GtkButton *btn, gpointer user_data)
     }
 }
 
+/* Populate a GtkTextView with lspci -k output and lsusb output (if available). */
+static void populate_devices_text(GtkTextView *tv)
+{
+    if (!tv) return;
+    GString *outbuf = g_string_new(NULL);
+
+    gchar *out = NULL;
+    gchar *err = NULL;
+    gint exit_status = 0;
+    GError *gerr = NULL;
+
+    /* lspci -k (show kernel drivers) */
+    gboolean ok = g_spawn_command_line_sync("lspci -k", &out, &err, &exit_status, &gerr);
+    if (ok && out && *out) {
+        g_string_append(outbuf, "lspci -k output:\n");
+        g_string_append(outbuf, out);
+        g_string_append(outbuf, "\n");
+    } else {
+        g_string_append(outbuf, "lspci not available or failed to run.\n");
+        if (gerr) {
+            g_string_append_printf(outbuf, "error: %s\n\n", gerr->message);
+            g_clear_error(&gerr);
+        } else if (err && *err) {
+            g_string_append(outbuf, err);
+            g_string_append(outbuf, "\n");
+        }
+    }
+    g_free(out);
+    g_free(err);
+
+    /* lsusb (optional) */
+    char *path_lsusb = g_find_program_in_path("lsusb");
+    if (path_lsusb) {
+        g_free(path_lsusb);
+        out = NULL; err = NULL; exit_status = 0; gerr = NULL;
+        ok = g_spawn_command_line_sync("lsusb", &out, &err, &exit_status, &gerr);
+        if (ok && out && *out) {
+            g_string_append(outbuf, "lsusb output:\n");
+            g_string_append(outbuf, out);
+            g_string_append(outbuf, "\n");
+        } else {
+            g_string_append(outbuf, "lsusb failed to run.\n");
+            if (gerr) { g_string_append_printf(outbuf, "error: %s\n\n", gerr->message); g_clear_error(&gerr); }
+            else if (err && *err) { g_string_append(outbuf, err); g_string_append(outbuf, "\n"); }
+        }
+        g_free(out);
+        g_free(err);
+    } else {
+        g_string_append(outbuf, "lsusb not found (skipping)\n");
+    }
+
+    GtkTextBuffer *buf = gtk_text_view_get_buffer(tv);
+    gtk_text_buffer_set_text(buf, outbuf->str, -1);
+    g_string_free(outbuf, TRUE);
+}
+
+static void on_devices_refresh_clicked(GtkButton *btn, gpointer user_data)
+{
+    GtkTextView *tv = GTK_TEXT_VIEW(user_data);
+    populate_devices_text(tv);
+}
+
+static GtkWidget *create_devices_page(GtkLabel *status_label)
+{
+    GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    gtk_widget_set_margin_top(vbox, 12);
+    gtk_widget_set_margin_bottom(vbox, 12);
+    gtk_widget_set_margin_start(vbox, 12);
+    gtk_widget_set_margin_end(vbox, 12);
+
+    GtkWidget *label = gtk_label_new("Devices");
+    gtk_widget_set_halign(label, GTK_ALIGN_START);
+    gtk_box_append(GTK_BOX(vbox), label);
+
+    GtkWidget *desc = gtk_label_new("System devices: lspci -k and lsusb (if available). Use Refresh to update.");
+    gtk_label_set_wrap(GTK_LABEL(desc), TRUE);
+    gtk_box_append(GTK_BOX(vbox), desc);
+
+    GtkWidget *scroller = gtk_scrolled_window_new();
+    gtk_widget_set_vexpand(scroller, TRUE);
+    gtk_widget_set_hexpand(scroller, TRUE);
+    gtk_box_append(GTK_BOX(vbox), scroller);
+
+    GtkWidget *tv = gtk_text_view_new();
+    gtk_text_view_set_editable(GTK_TEXT_VIEW(tv), FALSE);
+    gtk_text_view_set_monospace(GTK_TEXT_VIEW(tv), TRUE);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroller), tv);
+
+    /* initial populate */
+    populate_devices_text(GTK_TEXT_VIEW(tv));
+
+    GtkWidget *h = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    GtkWidget *btn_refresh = gtk_button_new_with_label("Refresh");
+    g_signal_connect(btn_refresh, "clicked", G_CALLBACK(on_devices_refresh_clicked), tv);
+    gtk_box_append(GTK_BOX(h), btn_refresh);
+    gtk_widget_set_halign(h, GTK_ALIGN_END);
+    gtk_box_append(GTK_BOX(vbox), h);
+
+    return vbox;
+}
+
+/* Populate a GtkTextView with lsblk output */
+static void populate_disks_text(GtkTextView *tv)
+{
+    if (!tv) return;
+    GString *outbuf = g_string_new(NULL);
+
+    gchar *out = NULL;
+    gchar *err = NULL;
+    gint exit_status = 0;
+    GError *gerr = NULL;
+
+    /* lsblk - block device info with more details */
+    gboolean ok = g_spawn_command_line_sync("lsblk -lpo NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT", &out, &err, &exit_status, &gerr);
+    if (ok && out && *out) {
+        g_string_append(outbuf, "Block Devices (lsblk):\n");
+        g_string_append(outbuf, out);
+        g_string_append(outbuf, "\n\n");
+    } else {
+        g_string_append(outbuf, "lsblk not available or failed to run.\n");
+        if (gerr) {
+            g_string_append_printf(outbuf, "error: %s\n\n", gerr->message);
+            g_clear_error(&gerr);
+        } else if (err && *err) {
+            g_string_append(outbuf, err);
+            g_string_append(outbuf, "\n\n");
+        }
+    }
+    g_free(out);
+    g_free(err);
+
+    /* df - filesystem usage info */
+    out = NULL; err = NULL; exit_status = 0; gerr = NULL;
+    ok = g_spawn_command_line_sync("df -h", &out, &err, &exit_status, &gerr);
+    if (ok && out && *out) {
+        g_string_append(outbuf, "Filesystem Usage (df -h):\n");
+        g_string_append(outbuf, out);
+        g_string_append(outbuf, "\n\n");
+    } else {
+        g_string_append(outbuf, "df not available or failed to run.\n");
+        if (gerr) { g_string_append_printf(outbuf, "error: %s\n\n", gerr->message); g_clear_error(&gerr); }
+        else if (err && *err) { g_string_append(outbuf, err); g_string_append(outbuf, "\n\n"); }
+    }
+    g_free(out);
+    g_free(err);
+
+    /* du - disk usage of home directory */
+    out = NULL; err = NULL; exit_status = 0; gerr = NULL;
+    char *home_cmd = g_strdup_printf("du -sh %s", g_get_home_dir());
+    ok = g_spawn_command_line_sync(home_cmd, &out, &err, &exit_status, &gerr);
+    if (ok && out && *out) {
+        g_string_append(outbuf, "Home Directory Size:\n");
+        g_string_append(outbuf, out);
+        g_string_append(outbuf, "\n\n");
+    }
+    g_free(home_cmd);
+    g_free(out);
+    g_free(err);
+
+    GtkTextBuffer *buf = gtk_text_view_get_buffer(tv);
+    gtk_text_buffer_set_text(buf, outbuf->str, -1);
+    g_string_free(outbuf, TRUE);
+}
+
+static void on_disks_refresh_clicked(GtkButton *btn, gpointer user_data)
+{
+    GtkTextView *tv = GTK_TEXT_VIEW(user_data);
+    populate_disks_text(tv);
+}
+
+static void on_gnome_disks_clicked(GtkButton *btn, gpointer user_data)
+{
+    GError *gerr = NULL;
+    gboolean ok = g_spawn_command_line_async("gnome-disks", &gerr);
+    if (!ok) {
+        if (gerr) {
+            g_warning("Failed to launch gnome-disks: %s", gerr->message);
+            g_clear_error(&gerr);
+        }
+    }
+}
+
+static GtkWidget *create_disks_page(GtkLabel *status_label)
+{
+    GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    gtk_widget_set_margin_top(vbox, 12);
+    gtk_widget_set_margin_bottom(vbox, 12);
+    gtk_widget_set_margin_start(vbox, 12);
+    gtk_widget_set_margin_end(vbox, 12);
+
+    GtkWidget *label = gtk_label_new("Disks");
+    gtk_widget_set_halign(label, GTK_ALIGN_START);
+    gtk_box_append(GTK_BOX(vbox), label);
+
+    GtkWidget *desc = gtk_label_new("Block devices, filesystem usage, and home directory size.");
+    gtk_label_set_wrap(GTK_LABEL(desc), TRUE);
+    gtk_box_append(GTK_BOX(vbox), desc);
+
+    GtkWidget *scroller = gtk_scrolled_window_new();
+    gtk_widget_set_vexpand(scroller, TRUE);
+    gtk_widget_set_hexpand(scroller, TRUE);
+    gtk_box_append(GTK_BOX(vbox), scroller);
+
+    GtkWidget *tv = gtk_text_view_new();
+    gtk_text_view_set_editable(GTK_TEXT_VIEW(tv), FALSE);
+    gtk_text_view_set_monospace(GTK_TEXT_VIEW(tv), TRUE);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroller), tv);
+
+    /* initial populate */
+    populate_disks_text(GTK_TEXT_VIEW(tv));
+
+    GtkWidget *h = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    GtkWidget *btn_refresh = gtk_button_new_with_label("Refresh");
+    g_signal_connect(btn_refresh, "clicked", G_CALLBACK(on_disks_refresh_clicked), tv);
+    gtk_box_append(GTK_BOX(h), btn_refresh);
+
+    GtkWidget *btn_gnome_disks = gtk_button_new_with_label("Open Gnome Disks");
+    g_signal_connect(btn_gnome_disks, "clicked", G_CALLBACK(on_gnome_disks_clicked), NULL);
+    gtk_box_append(GTK_BOX(h), btn_gnome_disks);
+
+    gtk_widget_set_halign(h, GTK_ALIGN_END);
+    gtk_box_append(GTK_BOX(vbox), h);
+
+    return vbox;
+}
+
+/* forward declare helper (defined later) so small inline dialogs can be created */
+static GtkWindow *create_modal_window(GtkWindow *parent, const char *title);
+
+/* Helper to read/write GTK settings in ~/.config/gtk-3.0/settings.ini and ~/.config/gtk-4.0/settings.ini */
+static gboolean apply_gtk_settings(const char *setting_name, const char *value, GError **error)
+{
+    const char *dirs[] = { "gtk-3.0", "gtk-4.0", NULL };
+    gboolean success = TRUE;
+
+    for (int i = 0; dirs[i]; i++) {
+        gchar *dir_path = g_build_filename(g_get_home_dir(), ".config", dirs[i], NULL);
+        g_mkdir_with_parents(dir_path, 0700);
+
+        gchar *settings_path = g_build_filename(dir_path, "settings.ini", NULL);
+
+        /* Read existing settings or create new if missing */
+        gchar *contents = NULL;
+        gsize len = 0;
+        GError *read_err = NULL;
+        gboolean file_exists = g_file_get_contents(settings_path, &contents, &len, &read_err);
+        if (!file_exists && read_err && read_err->code != G_FILE_ERROR_NOENT) {
+            if (error) g_propagate_error(error, read_err);
+            success = FALSE;
+            g_free(dir_path);
+            g_free(settings_path);
+            continue;
+        }
+        g_clear_error(&read_err);
+
+        GString *new_contents = g_string_new(NULL);
+        gboolean found = FALSE;
+
+        if (contents && *contents) {
+            gchar **lines = g_strsplit(contents, "\n", -1);
+            for (int j = 0; lines[j]; j++) {
+                gchar *line = lines[j];
+                gchar *stripped = g_strdup(line);
+                g_strstrip(stripped);
+
+                /* Check if this line starts with the setting name */
+                gchar *key_pattern = g_strdup_printf("%s=", setting_name);
+                if (g_str_has_prefix(stripped, key_pattern)) {
+                    /* Replace this line */
+                    g_string_append_printf(new_contents, "%s=%s\n", setting_name, value);
+                    found = TRUE;
+                } else if (*stripped && !g_str_has_prefix(stripped, "#")) {
+                    /* Keep non-comment, non-empty lines */
+                    g_string_append(new_contents, line);
+                    if (lines[j + 1]) g_string_append(new_contents, "\n");
+                } else if (*stripped) {
+                    /* Keep comments and empty lines */
+                    g_string_append(new_contents, line);
+                    if (lines[j + 1]) g_string_append(new_contents, "\n");
+                }
+                g_free(stripped);
+                g_free(key_pattern);
+            }
+            g_strfreev(lines);
+        }
+
+        /* If setting not found, add it under [Settings] or at end */
+        if (!found) {
+            if (new_contents->len > 0 && !g_str_has_suffix(new_contents->str, "\n")) {
+                g_string_append(new_contents, "\n");
+            }
+            if (new_contents->len == 0 || !g_strrstr(new_contents->str, "[Settings]")) {
+                g_string_append(new_contents, "[Settings]\n");
+            }
+            g_string_append_printf(new_contents, "%s=%s\n", setting_name, value);
+        }
+
+        GError *write_err = NULL;
+        gboolean write_ok = g_file_set_contents(settings_path, new_contents->str, -1, &write_err);
+        if (!write_ok) {
+            if (error) g_propagate_error(error, write_err);
+            success = FALSE;
+        }
+        g_free(contents);
+        g_string_free(new_contents, TRUE);
+        g_free(dir_path);
+        g_free(settings_path);
+    }
+
+    return success;
+}
+
+/* Appearance page: wallpaper (runs waypaper) and theme setters */
+typedef struct {
+    GtkComboBoxText *cb;
+    GtkEntry *entry;
+    GtkLabel *status;
+    const char *setting_name;  /* gtk-theme-name, gtk-icon-theme-name, or gtk-cursor-theme-name */
+} ThemeSetData;
+
+/* Generic theme setter that writes to gtk settings or icon theme as appropriate */
+static void on_set_theme_clicked(GtkButton *btn, gpointer user_data)
+{
+    ThemeSetData *d = user_data;
+    GtkComboBoxText *cb = d->cb;
+    GtkEntry *entry = d->entry;
+    GtkLabel *status = d->status;
+    const char *setting = d->setting_name;
+
+    char *choice = gtk_combo_box_text_get_active_text(cb);
+    const char *manual = gtk_editable_get_text(GTK_EDITABLE(entry));
+    const char *theme_name = NULL;
+    if (choice && *choice) theme_name = choice;
+    else if (manual && *manual) theme_name = manual;
+    else {
+        set_status(status, "Please select or enter a theme name");
+        g_free(choice);
+        return;
+    }
+
+    /* Cursor theme is special: write to ~/.icons/default/index.theme */
+    if (g_strcmp0(setting, "gtk-cursor-theme-name") == 0) {
+        gchar *dir = g_build_filename(g_get_home_dir(), ".icons", "default", NULL);
+        g_mkdir_with_parents(dir, 0700);
+        gchar *path = g_build_filename(dir, "index.theme", NULL);
+        gchar *contents = g_strdup_printf("[Icon Theme]\nInherits=%s\n", theme_name);
+        GError *err = NULL;
+        gboolean ok = g_file_set_contents(path, contents, -1, &err);
+        if (!ok) {
+            gchar *msg = g_strdup_printf("Failed to write %s: %s", path, err ? err->message : "unknown");
+            set_status(status, msg);
+            g_free(msg);
+            g_clear_error(&err);
+        } else {
+            set_status(status, "Cursor theme saved to ~/.icons/default/index.theme");
+            /* Show restart dialog */
+            GtkWidget *top = gtk_widget_get_ancestor(GTK_WIDGET(status), GTK_TYPE_WINDOW);
+            GtkWindow *parent = GTK_WINDOW(top);
+            GtkWindow *dialog = create_modal_window(parent, "Restart required");
+            GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+            gtk_window_set_child(dialog, vbox);
+            GtkWidget *msg = gtk_label_new("Cursor theme saved. You may need to restart your session (log out and back in) to see the changes.");
+            gtk_label_set_wrap(GTK_LABEL(msg), TRUE);
+            gtk_box_append(GTK_BOX(vbox), msg);
+            GtkWidget *h = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+            GtkWidget *btn_ok = gtk_button_new_with_label("OK");
+            g_signal_connect_swapped(btn_ok, "clicked", G_CALLBACK(gtk_window_destroy), dialog);
+            gtk_box_append(GTK_BOX(h), btn_ok);
+            gtk_box_append(GTK_BOX(vbox), h);
+            gtk_window_present(dialog);
+        }
+        g_free(dir);
+        g_free(path);
+        g_free(contents);
+    } else {
+        /* GTK theme or icon theme: write to settings.ini files */
+        GError *err = NULL;
+        gboolean ok = apply_gtk_settings(setting, theme_name, &err);
+        if (!ok) {
+            gchar *msg = g_strdup_printf("Failed to save %s: %s", setting, err ? err->message : "unknown");
+            set_status(status, msg);
+            g_free(msg);
+            g_clear_error(&err);
+        } else {
+            gchar *msg = g_strdup_printf("%s saved to ~/.config/gtk-3.0/settings.ini and ~/.config/gtk-4.0/settings.ini", setting);
+            set_status(status, msg);
+            g_free(msg);
+        }
+    }
+
+    g_free(choice);
+}
+
+typedef struct {
+    GtkComboBoxText *cb;
+    GtkEntry *entry;
+    GtkLabel *status;
+} CursorSetData;
+
+static void on_set_cursor_clicked(GtkButton *btn, gpointer user_data)
+{
+    ThemeSetData *d = user_data;
+    on_set_theme_clicked(btn, d);
+}
+
+/* Helper to populate a combo box with theme subdirectories from a given base path */
+static void populate_theme_combobox(GtkComboBoxText *cb, const char *base_path)
+{
+    GHashTable *seen = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+    GDir *d = g_dir_open(base_path, 0, NULL);
+    if (d) {
+        const char *name;
+        while ((name = g_dir_read_name(d)) != NULL) {
+            gchar *full = g_build_filename(base_path, name, NULL);
+            if (g_file_test(full, G_FILE_TEST_IS_DIR)) {
+                if (!g_hash_table_contains(seen, name)) {
+                    gtk_combo_box_text_append_text(cb, name);
+                    g_hash_table_add(seen, g_strdup(name));
+                }
+            }
+            g_free(full);
+        }
+        g_dir_close(d);
+    }
+    g_hash_table_destroy(seen);
+}
+
+static GtkWidget *create_appearance_page(GtkLabel *status_label)
+{
+    GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    gtk_widget_set_margin_top(vbox, 12);
+    gtk_widget_set_margin_bottom(vbox, 12);
+    gtk_widget_set_margin_start(vbox, 12);
+    gtk_widget_set_margin_end(vbox, 12);
+
+    GtkWidget *label = gtk_label_new("Appearance");
+    gtk_widget_set_halign(label, GTK_ALIGN_START);
+    gtk_box_append(GTK_BOX(vbox), label);
+
+    /* Wallpaper button */
+    GtkWidget *btn_wallpaper = gtk_button_new_with_label("Wallpaper (waypaper)");
+    g_signal_connect(btn_wallpaper, "clicked", G_CALLBACK(on_run_waypaper), status_label);
+    gtk_box_append(GTK_BOX(vbox), btn_wallpaper);
+
+    /* GTK theme selector */
+    GtkWidget *h_gtk = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    GtkWidget *lbl_gtk = gtk_label_new("GTK theme:");
+    gtk_box_append(GTK_BOX(h_gtk), lbl_gtk);
+    GtkWidget *cb_gtk = gtk_combo_box_text_new();
+    populate_theme_combobox(GTK_COMBO_BOX_TEXT(cb_gtk), "/usr/share/themes");
+    gtk_box_append(GTK_BOX(h_gtk), cb_gtk);
+    GtkWidget *entry_gtk = gtk_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(entry_gtk), "Or enter theme name");
+    gtk_box_append(GTK_BOX(h_gtk), entry_gtk);
+    GtkWidget *btn_gtk = gtk_button_new_with_label("Set GTK theme");
+    ThemeSetData *tsd_gtk = g_new0(ThemeSetData, 1);
+    tsd_gtk->cb = GTK_COMBO_BOX_TEXT(cb_gtk);
+    tsd_gtk->entry = GTK_ENTRY(entry_gtk);
+    tsd_gtk->status = status_label;
+    tsd_gtk->setting_name = "gtk-theme-name";
+    g_signal_connect(btn_gtk, "clicked", G_CALLBACK(on_set_theme_clicked), tsd_gtk);
+    gtk_box_append(GTK_BOX(h_gtk), btn_gtk);
+    gtk_box_append(GTK_BOX(vbox), h_gtk);
+
+    /* Icon theme selector */
+    GtkWidget *h_icon = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    GtkWidget *lbl_icon = gtk_label_new("Icon theme:");
+    gtk_box_append(GTK_BOX(h_icon), lbl_icon);
+    GtkWidget *cb_icon = gtk_combo_box_text_new();
+    const char *icon_bases[] = { "/usr/share/icons", "/usr/local/share/icons", NULL };
+    for (int i = 0; icon_bases[i]; i++) {
+        populate_theme_combobox(GTK_COMBO_BOX_TEXT(cb_icon), icon_bases[i]);
+    }
+    gtk_box_append(GTK_BOX(h_icon), cb_icon);
+    GtkWidget *entry_icon = gtk_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(entry_icon), "Or enter theme name");
+    gtk_box_append(GTK_BOX(h_icon), entry_icon);
+    GtkWidget *btn_icon = gtk_button_new_with_label("Set icon theme");
+    ThemeSetData *tsd_icon = g_new0(ThemeSetData, 1);
+    tsd_icon->cb = GTK_COMBO_BOX_TEXT(cb_icon);
+    tsd_icon->entry = GTK_ENTRY(entry_icon);
+    tsd_icon->status = status_label;
+    tsd_icon->setting_name = "gtk-icon-theme-name";
+    g_signal_connect(btn_icon, "clicked", G_CALLBACK(on_set_theme_clicked), tsd_icon);
+    gtk_box_append(GTK_BOX(h_icon), btn_icon);
+    gtk_box_append(GTK_BOX(vbox), h_icon);
+
+    /* Cursor theme selector: combobox + manual entry + set button */
+    GtkWidget *h_cursor = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    GtkWidget *lbl_cursor = gtk_label_new("Cursor theme:");
+    gtk_box_append(GTK_BOX(h_cursor), lbl_cursor);
+
+    GtkWidget *cb_cursor = gtk_combo_box_text_new();
+
+    /* collect candidate dirs from common icon locations */
+    const char *cursor_bases[] = { "/usr/share/icons", "/usr/local/share/icons", "~/.icons", "~/.local/share/icons", NULL };
+    GHashTable *seen_cursor = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+    for (int i = 0; cursor_bases[i]; i++) {
+        const char *base = cursor_bases[i];
+        gchar *expanded = NULL;
+        if (base[0] == '~') {
+            const char *rest = base + 2; /* skip "~/" */
+            expanded = g_build_filename(g_get_home_dir(), rest, NULL);
+        } else {
+            expanded = g_strdup(base);
+        }
+        GDir *d = g_dir_open(expanded, 0, NULL);
+        if (d) {
+            const char *name;
+            while ((name = g_dir_read_name(d)) != NULL) {
+                gchar *full = g_build_filename(expanded, name, NULL);
+                if (g_file_test(full, G_FILE_TEST_IS_DIR)) {
+                    if (!g_hash_table_contains(seen_cursor, name)) {
+                        gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(cb_cursor), name);
+                        g_hash_table_add(seen_cursor, g_strdup(name));
+                    }
+                }
+                g_free(full);
+            }
+            g_dir_close(d);
+        }
+        g_free(expanded);
+    }
+    g_hash_table_destroy(seen_cursor);
+
+    gtk_box_append(GTK_BOX(h_cursor), cb_cursor);
+
+    GtkWidget *entry_cursor = gtk_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(entry_cursor), "Or enter theme name manually");
+    gtk_box_append(GTK_BOX(h_cursor), entry_cursor);
+
+    GtkWidget *btn_cursor = gtk_button_new_with_label("Set cursor theme");
+    ThemeSetData *tsd_cursor = g_new0(ThemeSetData, 1);
+    tsd_cursor->cb = GTK_COMBO_BOX_TEXT(cb_cursor);
+    tsd_cursor->entry = GTK_ENTRY(entry_cursor);
+    tsd_cursor->status = status_label;
+    tsd_cursor->setting_name = "gtk-cursor-theme-name";
+    g_signal_connect(btn_cursor, "clicked", G_CALLBACK(on_set_theme_clicked), tsd_cursor);
+    gtk_box_append(GTK_BOX(h_cursor), btn_cursor);
+
+    gtk_box_append(GTK_BOX(vbox), h_cursor);
+    return vbox;
+}
 static GtkWidget *create_runcommand_page(GtkLabel *status_label)
 {
     GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
@@ -1735,6 +2278,239 @@ static GtkWidget *create_config_page(GtkLabel *status_label)
 
 /* Hyprland editor implemented in hypr.c */
 
+/* System info helpers */
+static gchar *get_system_info_item(const char *cmd)
+{
+    gchar *out = NULL;
+    gchar *err = NULL;
+    gint exit_status = 0;
+    GError *error = NULL;
+    
+    if (!g_spawn_command_line_sync(cmd, &out, &err, &exit_status, &error)) {
+        if (error) {
+            g_clear_error(&error);
+        }
+        g_free(out);
+        g_free(err);
+        return g_strdup("Unknown");
+    }
+    
+    if (out) {
+        g_strchomp(out);
+        return out;
+    }
+    g_free(err);
+    return g_strdup("Unknown");
+}
+
+static gchar *get_os_name(void)
+{
+    /* Try to read /etc/os-release or /etc/lsb-release */
+    gchar *content = NULL;
+    gchar **lines = NULL;
+    gchar *result = NULL;
+    
+    if (g_file_get_contents("/etc/os-release", &content, NULL, NULL)) {
+        lines = g_strsplit(content, "\n", -1);
+        for (int i = 0; lines[i]; i++) {
+            if (g_str_has_prefix(lines[i], "PRETTY_NAME=")) {
+                gchar *value = g_strdup(lines[i] + 12); /* skip "PRETTY_NAME=" */
+                g_strstrip(value);
+                /* Remove surrounding quotes if present */
+                if (value[0] == '"' && value[strlen(value)-1] == '"') {
+                    gchar *unquoted = g_strndup(value + 1, strlen(value) - 2);
+                    g_free(value);
+                    value = unquoted;
+                }
+                result = value;
+                break;
+            }
+        }
+        g_strfreev(lines);
+        g_free(content);
+    }
+    
+    return result ? result : g_strdup("Linux");
+}
+
+static gchar *get_cpu_name(void)
+{
+    gchar *content = NULL;
+    gchar **lines = NULL;
+    gchar *result = NULL;
+    
+    if (g_file_get_contents("/proc/cpuinfo", &content, NULL, NULL)) {
+        lines = g_strsplit(content, "\n", -1);
+        for (int i = 0; lines[i]; i++) {
+            if (g_str_has_prefix(lines[i], "model name")) {
+                /* Find the colon and get the value after it */
+                gchar *colon = g_strstr_len(lines[i], -1, ":");
+                if (colon) {
+                    gchar *value = g_strdup(colon + 1);
+                    g_strstrip(value);
+                    result = value;
+                    break;
+                }
+            }
+        }
+        g_strfreev(lines);
+        g_free(content);
+    }
+    
+    return result ? result : g_strdup("Unknown CPU");
+}
+
+static gchar *get_ram_info(void)
+{
+    gchar *content = NULL;
+    gchar **lines = NULL;
+    gchar *result = NULL;
+    gulong total_kb = 0;
+    
+    if (g_file_get_contents("/proc/meminfo", &content, NULL, NULL)) {
+        lines = g_strsplit(content, "\n", -1);
+        for (int i = 0; lines[i]; i++) {
+            if (g_str_has_prefix(lines[i], "MemTotal:")) {
+                gchar *colon = g_strstr_len(lines[i], -1, ":");
+                if (colon) {
+                    gchar *value = g_strdup(colon + 1);
+                    g_strstrip(value);
+                    total_kb = strtoul(value, NULL, 10);
+                    g_free(value);
+                    break;
+                }
+            }
+        }
+        g_strfreev(lines);
+        g_free(content);
+    }
+    
+    if (total_kb > 0) {
+        gdouble total_gb = (gdouble)total_kb / (1024 * 1024);
+        result = g_strdup_printf("%.1f GB", total_gb);
+    } else {
+        result = g_strdup("Unknown");
+    }
+    
+    return result;
+}
+
+static GtkWidget *create_systeminfo_page(void)
+{
+    GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
+    gtk_widget_set_margin_top(vbox, 12);
+    gtk_widget_set_margin_bottom(vbox, 12);
+    gtk_widget_set_margin_start(vbox, 12);
+    gtk_widget_set_margin_end(vbox, 12);
+
+    GtkWidget *title = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(title), "<span size='large' weight='bold'>System Information</span>");
+    gtk_widget_set_halign(title, GTK_ALIGN_START);
+    gtk_box_append(GTK_BOX(vbox), title);
+
+    /* Gather system info */
+    gchar *os_name = get_os_name();
+    gchar *hostname = get_system_info_item("uname -n");
+    gchar *kernel = get_system_info_item("uname -r");
+    gchar *arch = get_system_info_item("uname -m");
+    gchar *cpu_name = get_cpu_name();
+    gchar *ram_info = get_ram_info();
+
+    /* Grid layout for system info */
+    GtkWidget *grid = gtk_grid_new();
+    gtk_grid_set_row_spacing(GTK_GRID(grid), 12);
+    gtk_grid_set_column_spacing(GTK_GRID(grid), 20);
+    gtk_box_append(GTK_BOX(vbox), grid);
+
+    int row = 0;
+
+    /* OS */
+    GtkWidget *label_os = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(label_os), "<b>Operating System</b>");
+    gtk_widget_set_halign(label_os, GTK_ALIGN_START);
+    gtk_grid_attach(GTK_GRID(grid), label_os, 0, row, 1, 1);
+    
+    GtkWidget *value_os = gtk_label_new(os_name);
+    gtk_label_set_wrap(GTK_LABEL(value_os), TRUE);
+    gtk_widget_set_halign(value_os, GTK_ALIGN_START);
+    gtk_grid_attach(GTK_GRID(grid), value_os, 1, row, 1, 1);
+    row++;
+
+    /* Hostname */
+    GtkWidget *label_hostname = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(label_hostname), "<b>Hostname</b>");
+    gtk_widget_set_halign(label_hostname, GTK_ALIGN_START);
+    gtk_grid_attach(GTK_GRID(grid), label_hostname, 0, row, 1, 1);
+    
+    GtkWidget *value_hostname = gtk_label_new(hostname);
+    gtk_label_set_wrap(GTK_LABEL(value_hostname), TRUE);
+    gtk_widget_set_halign(value_hostname, GTK_ALIGN_START);
+    gtk_grid_attach(GTK_GRID(grid), value_hostname, 1, row, 1, 1);
+    row++;
+
+    /* Kernel */
+    GtkWidget *label_kernel = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(label_kernel), "<b>Kernel Version</b>");
+    gtk_widget_set_halign(label_kernel, GTK_ALIGN_START);
+    gtk_grid_attach(GTK_GRID(grid), label_kernel, 0, row, 1, 1);
+    
+    GtkWidget *value_kernel = gtk_label_new(kernel);
+    gtk_label_set_wrap(GTK_LABEL(value_kernel), TRUE);
+    gtk_widget_set_halign(value_kernel, GTK_ALIGN_START);
+    gtk_grid_attach(GTK_GRID(grid), value_kernel, 1, row, 1, 1);
+    row++;
+
+    /* Architecture */
+    GtkWidget *label_arch = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(label_arch), "<b>CPU Architecture</b>");
+    gtk_widget_set_halign(label_arch, GTK_ALIGN_START);
+    gtk_grid_attach(GTK_GRID(grid), label_arch, 0, row, 1, 1);
+    
+    GtkWidget *value_arch = gtk_label_new(arch);
+    gtk_label_set_wrap(GTK_LABEL(value_arch), TRUE);
+    gtk_widget_set_halign(value_arch, GTK_ALIGN_START);
+    gtk_grid_attach(GTK_GRID(grid), value_arch, 1, row, 1, 1);
+    row++;
+
+    /* CPU */
+    GtkWidget *label_cpu = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(label_cpu), "<b>CPU</b>");
+    gtk_widget_set_halign(label_cpu, GTK_ALIGN_START);
+    gtk_grid_attach(GTK_GRID(grid), label_cpu, 0, row, 1, 1);
+    
+    GtkWidget *value_cpu = gtk_label_new(cpu_name);
+    gtk_label_set_wrap(GTK_LABEL(value_cpu), TRUE);
+    gtk_widget_set_halign(value_cpu, GTK_ALIGN_START);
+    gtk_grid_attach(GTK_GRID(grid), value_cpu, 1, row, 1, 1);
+    row++;
+
+    /* RAM */
+    GtkWidget *label_ram = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(label_ram), "<b>Total RAM</b>");
+    gtk_widget_set_halign(label_ram, GTK_ALIGN_START);
+    gtk_grid_attach(GTK_GRID(grid), label_ram, 0, row, 1, 1);
+    
+    GtkWidget *value_ram = gtk_label_new(ram_info);
+    gtk_label_set_wrap(GTK_LABEL(value_ram), TRUE);
+    gtk_widget_set_halign(value_ram, GTK_ALIGN_START);
+    gtk_grid_attach(GTK_GRID(grid), value_ram, 1, row, 1, 1);
+
+    /* Spacer to push content to top */
+    GtkWidget *spacer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_set_vexpand(spacer, TRUE);
+    gtk_box_append(GTK_BOX(vbox), spacer);
+
+    /* Free allocated strings */
+    g_free(os_name);
+    g_free(hostname);
+    g_free(kernel);
+    g_free(arch);
+    g_free(cpu_name);
+    g_free(ram_info);
+
+    return vbox;
+}
+
 static void on_row_selected(GtkListBox *box, GtkListBoxRow *row, gpointer user_data)
 {
     GtkStack *stack = GTK_STACK(user_data);
@@ -1754,40 +2530,39 @@ static void on_activate(GApplication *app, gpointer user_data)
     GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
     gtk_window_set_child(window, hbox);
 
-    /* left list */
+    /* left sidebar with navigation list */
     GtkWidget *left = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
     gtk_widget_set_valign(left, GTK_ALIGN_START);
-    /* keep the left sidebar a reasonable width on large screens but allow
-     * the main stack to expand: request a modest width for the left column */
     gtk_widget_set_size_request(left, 200, -1);
     gtk_widget_set_hexpand(left, FALSE);
 
+    /* Navigation list */
     GtkWidget *list = gtk_list_box_new();
     gtk_list_box_set_selection_mode(GTK_LIST_BOX(list), GTK_SELECTION_SINGLE);
 
+    GtkWidget *row_sysinfo = gtk_label_new("System Info");
     GtkWidget *row1 = gtk_label_new("Packages");
     GtkWidget *row2 = gtk_label_new("Users");
-    GtkWidget *row3 = gtk_label_new("Config");
+    GtkWidget *row3 = gtk_label_new("Appearance");
     GtkWidget *row_hypr = gtk_label_new("Hyprland");
+    GtkWidget *row_devices = gtk_label_new("Devices");
+    GtkWidget *row_disks = gtk_label_new("Disks");
     GtkWidget *row4 = gtk_label_new("Clipboard");
     GtkWidget *row5 = gtk_label_new("Screen Recording");
-    GtkWidget *row6 = gtk_label_new("Emoji");
-    GtkWidget *row7 = gtk_label_new("Run App");
-    GtkWidget *row8 = gtk_label_new("Run Command");
-    GtkWidget *row9 = gtk_label_new("Binds");
-    GtkWidget *row10 = gtk_label_new("Default Apps");
+    GtkWidget *row6 = gtk_label_new("Binds");
+    GtkWidget *row7 = gtk_label_new("Default Apps");
 
+    gtk_list_box_insert(GTK_LIST_BOX(list), row_sysinfo, -1);
     gtk_list_box_insert(GTK_LIST_BOX(list), row1, -1);
     gtk_list_box_insert(GTK_LIST_BOX(list), row2, -1);
     gtk_list_box_insert(GTK_LIST_BOX(list), row3, -1);
     gtk_list_box_insert(GTK_LIST_BOX(list), row_hypr, -1);
+    gtk_list_box_insert(GTK_LIST_BOX(list), row_devices, -1);
+    gtk_list_box_insert(GTK_LIST_BOX(list), row_disks, -1);
     gtk_list_box_insert(GTK_LIST_BOX(list), row4, -1);
     gtk_list_box_insert(GTK_LIST_BOX(list), row5, -1);
     gtk_list_box_insert(GTK_LIST_BOX(list), row6, -1);
     gtk_list_box_insert(GTK_LIST_BOX(list), row7, -1);
-    gtk_list_box_insert(GTK_LIST_BOX(list), row8, -1);
-    gtk_list_box_insert(GTK_LIST_BOX(list), row9, -1);
-    gtk_list_box_insert(GTK_LIST_BOX(list), row10, -1);
     gtk_box_append(GTK_BOX(left), list);
 
     gtk_box_append(GTK_BOX(hbox), left);
@@ -1806,27 +2581,27 @@ static void on_activate(GApplication *app, gpointer user_data)
     GtkWidget *status_label = gtk_label_new("");
     gtk_widget_set_halign(status_label, GTK_ALIGN_START);
 
+    GtkWidget *sysinfo_page = create_systeminfo_page();
     GtkWidget *pkg_page = create_packages_page(window, GTK_LABEL(status_label));
     GtkWidget *users_page = create_users_page(GTK_LABEL(status_label));
-    GtkWidget *config_page = create_config_page(GTK_LABEL(status_label));
+    GtkWidget *appearance_page = create_appearance_page(GTK_LABEL(status_label));
+    GtkWidget *hyprland_page = create_hyprland_page(GTK_LABEL(status_label));
+    GtkWidget *devices_page = create_devices_page(GTK_LABEL(status_label));
+    GtkWidget *disks_page = create_disks_page(GTK_LABEL(status_label));
     GtkWidget *clipboard_page = create_clipboard_page(GTK_LABEL(status_label));
     GtkWidget *screenrec_page = create_screenrec_page(GTK_LABEL(status_label));
-    GtkWidget *emoji_page = create_emoji_page(GTK_LABEL(status_label));
-    GtkWidget *runapp_page = create_runapp_page(GTK_LABEL(status_label));
-    GtkWidget *runcommand_page = create_runcommand_page(GTK_LABEL(status_label));
     GtkWidget *binds_page = create_binds_page(GTK_LABEL(status_label));
-    GtkWidget *hyprland_page = create_hyprland_page(GTK_LABEL(status_label));
     GtkWidget *defaultapps_page = create_defaultapps_page(GTK_LABEL(status_label));
 
+    gtk_stack_add_named(GTK_STACK(stack), sysinfo_page, "System Info");
     gtk_stack_add_named(GTK_STACK(stack), pkg_page, "Packages");
     gtk_stack_add_named(GTK_STACK(stack), users_page, "Users");
-    gtk_stack_add_named(GTK_STACK(stack), config_page, "Config");
+    gtk_stack_add_named(GTK_STACK(stack), appearance_page, "Appearance");
     gtk_stack_add_named(GTK_STACK(stack), hyprland_page, "Hyprland");
+    gtk_stack_add_named(GTK_STACK(stack), devices_page, "Devices");
+    gtk_stack_add_named(GTK_STACK(stack), disks_page, "Disks");
     gtk_stack_add_named(GTK_STACK(stack), clipboard_page, "Clipboard");
     gtk_stack_add_named(GTK_STACK(stack), screenrec_page, "Screen Recording");
-    gtk_stack_add_named(GTK_STACK(stack), emoji_page, "Emoji");
-    gtk_stack_add_named(GTK_STACK(stack), runapp_page, "Run App");
-    gtk_stack_add_named(GTK_STACK(stack), runcommand_page, "Run Command");
     gtk_stack_add_named(GTK_STACK(stack), binds_page, "Binds");
     gtk_stack_add_named(GTK_STACK(stack), defaultapps_page, "Default Apps");
 
