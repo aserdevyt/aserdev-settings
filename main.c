@@ -57,6 +57,9 @@ static void run_command_and_report(const char *cmd, GtkLabel *status)
 /* forward-declare helper used by run-command page */
 static gboolean run_command_via_pkexec_stdin(const char *command, GtkLabel *status);
 
+/* forward-declare helpers used by appearance page */
+static void on_launch_button_clicked(GtkButton *btn, gpointer user_data);
+
 /*
  * Detect a terminal emulator to use. Prefer kitty, then try a small set of
  * fallbacks. Return a newly-allocated prefix string that contains a single
@@ -719,21 +722,43 @@ static void on_set_theme_clicked(GtkButton *btn, gpointer user_data)
         return;
     }
 
-    /* Cursor theme is special: write to ~/.icons/default/index.theme */
+    /* Cursor theme is special: write to both ~/.icons/default/index.theme AND GTK settings files */
     if (g_strcmp0(setting, "gtk-cursor-theme-name") == 0) {
+        gboolean all_ok = TRUE;
+        GError *err = NULL;
+
+        /* 1. Write to ~/.icons/default/index.theme */
         gchar *dir = g_build_filename(g_get_home_dir(), ".icons", "default", NULL);
         g_mkdir_with_parents(dir, 0700);
         gchar *path = g_build_filename(dir, "index.theme", NULL);
         gchar *contents = g_strdup_printf("[Icon Theme]\nInherits=%s\n", theme_name);
-        GError *err = NULL;
         gboolean ok = g_file_set_contents(path, contents, -1, &err);
         if (!ok) {
             gchar *msg = g_strdup_printf("Failed to write %s: %s", path, err ? err->message : "unknown");
             set_status(status, msg);
             g_free(msg);
             g_clear_error(&err);
-        } else {
-            set_status(status, "Cursor theme saved to ~/.icons/default/index.theme");
+            all_ok = FALSE;
+        }
+        g_free(dir);
+        g_free(path);
+        g_free(contents);
+
+        /* 2. Write to ~/.config/gtk-3.0/settings.ini and ~/.config/gtk-4.0/settings.ini */
+        if (all_ok) {
+            GError *settings_err = NULL;
+            ok = apply_gtk_settings(setting, theme_name, &settings_err);
+            if (!ok) {
+                gchar *msg = g_strdup_printf("Failed to save %s to GTK settings: %s", setting, settings_err ? settings_err->message : "unknown");
+                set_status(status, msg);
+                g_free(msg);
+                g_clear_error(&settings_err);
+                all_ok = FALSE;
+            }
+        }
+
+        if (all_ok) {
+            set_status(status, "Cursor theme saved to both ~/.icons/default/index.theme and GTK settings files");
             /* Show restart dialog */
             GtkWidget *top = gtk_widget_get_ancestor(GTK_WIDGET(status), GTK_TYPE_WINDOW);
             GtkWindow *parent = GTK_WINDOW(top);
@@ -750,9 +775,6 @@ static void on_set_theme_clicked(GtkButton *btn, gpointer user_data)
             gtk_box_append(GTK_BOX(vbox), h);
             gtk_window_present(dialog);
         }
-        g_free(dir);
-        g_free(path);
-        g_free(contents);
     } else {
         /* GTK theme or icon theme: write to settings.ini files */
         GError *err = NULL;
@@ -826,11 +848,15 @@ static GtkWidget *create_appearance_page(GtkLabel *status_label)
     /* GTK theme selector */
     GtkWidget *h_gtk = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     GtkWidget *lbl_gtk = gtk_label_new("GTK theme:");
+    gtk_widget_set_size_request(lbl_gtk, 100, -1);
+    gtk_widget_set_halign(lbl_gtk, GTK_ALIGN_START);
     gtk_box_append(GTK_BOX(h_gtk), lbl_gtk);
     GtkWidget *cb_gtk = gtk_combo_box_text_new();
+    gtk_widget_set_hexpand(cb_gtk, TRUE);
     populate_theme_combobox(GTK_COMBO_BOX_TEXT(cb_gtk), "/usr/share/themes");
     gtk_box_append(GTK_BOX(h_gtk), cb_gtk);
     GtkWidget *entry_gtk = gtk_entry_new();
+    gtk_widget_set_hexpand(entry_gtk, TRUE);
     gtk_entry_set_placeholder_text(GTK_ENTRY(entry_gtk), "Or enter theme name");
     gtk_box_append(GTK_BOX(h_gtk), entry_gtk);
     GtkWidget *btn_gtk = gtk_button_new_with_label("Set GTK theme");
@@ -846,14 +872,18 @@ static GtkWidget *create_appearance_page(GtkLabel *status_label)
     /* Icon theme selector */
     GtkWidget *h_icon = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     GtkWidget *lbl_icon = gtk_label_new("Icon theme:");
+    gtk_widget_set_size_request(lbl_icon, 100, -1);
+    gtk_widget_set_halign(lbl_icon, GTK_ALIGN_START);
     gtk_box_append(GTK_BOX(h_icon), lbl_icon);
     GtkWidget *cb_icon = gtk_combo_box_text_new();
+    gtk_widget_set_hexpand(cb_icon, TRUE);
     const char *icon_bases[] = { "/usr/share/icons", "/usr/local/share/icons", NULL };
     for (int i = 0; icon_bases[i]; i++) {
         populate_theme_combobox(GTK_COMBO_BOX_TEXT(cb_icon), icon_bases[i]);
     }
     gtk_box_append(GTK_BOX(h_icon), cb_icon);
     GtkWidget *entry_icon = gtk_entry_new();
+    gtk_widget_set_hexpand(entry_icon, TRUE);
     gtk_entry_set_placeholder_text(GTK_ENTRY(entry_icon), "Or enter theme name");
     gtk_box_append(GTK_BOX(h_icon), entry_icon);
     GtkWidget *btn_icon = gtk_button_new_with_label("Set icon theme");
@@ -869,9 +899,12 @@ static GtkWidget *create_appearance_page(GtkLabel *status_label)
     /* Cursor theme selector: combobox + manual entry + set button */
     GtkWidget *h_cursor = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     GtkWidget *lbl_cursor = gtk_label_new("Cursor theme:");
+    gtk_widget_set_size_request(lbl_cursor, 100, -1);
+    gtk_widget_set_halign(lbl_cursor, GTK_ALIGN_START);
     gtk_box_append(GTK_BOX(h_cursor), lbl_cursor);
 
     GtkWidget *cb_cursor = gtk_combo_box_text_new();
+    gtk_widget_set_hexpand(cb_cursor, TRUE);
 
     /* collect candidate dirs from common icon locations */
     const char *cursor_bases[] = { "/usr/share/icons", "/usr/local/share/icons", "~/.icons", "~/.local/share/icons", NULL };
@@ -907,6 +940,7 @@ static GtkWidget *create_appearance_page(GtkLabel *status_label)
     gtk_box_append(GTK_BOX(h_cursor), cb_cursor);
 
     GtkWidget *entry_cursor = gtk_entry_new();
+    gtk_widget_set_hexpand(entry_cursor, TRUE);
     gtk_entry_set_placeholder_text(GTK_ENTRY(entry_cursor), "Or enter theme name manually");
     gtk_box_append(GTK_BOX(h_cursor), entry_cursor);
 
@@ -920,6 +954,30 @@ static GtkWidget *create_appearance_page(GtkLabel *status_label)
     gtk_box_append(GTK_BOX(h_cursor), btn_cursor);
 
     gtk_box_append(GTK_BOX(vbox), h_cursor);
+
+    /* Qt5 and Qt6 theme configurators */
+    GtkWidget *h_qt = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    GtkWidget *lbl_qt = gtk_label_new("Qt themes:");
+    gtk_widget_set_size_request(lbl_qt, 100, -1);
+    gtk_widget_set_halign(lbl_qt, GTK_ALIGN_START);
+    gtk_box_append(GTK_BOX(h_qt), lbl_qt);
+
+    GtkWidget *btn_qt5 = gtk_button_new_with_label("Configure Qt5 (qt5ct)");
+    gtk_widget_set_hexpand(btn_qt5, TRUE);
+    g_signal_connect(btn_qt5, "clicked", G_CALLBACK(on_launch_button_clicked), NULL);
+    g_object_set_data(G_OBJECT(btn_qt5), "prog", (gpointer)"qt5ct");
+    g_object_set_data(G_OBJECT(btn_qt5), "status", status_label);
+    gtk_box_append(GTK_BOX(h_qt), btn_qt5);
+
+    GtkWidget *btn_qt6 = gtk_button_new_with_label("Configure Qt6 (qt6ct)");
+    gtk_widget_set_hexpand(btn_qt6, TRUE);
+    g_signal_connect(btn_qt6, "clicked", G_CALLBACK(on_launch_button_clicked), NULL);
+    g_object_set_data(G_OBJECT(btn_qt6), "prog", (gpointer)"qt6ct");
+    g_object_set_data(G_OBJECT(btn_qt6), "status", status_label);
+    gtk_box_append(GTK_BOX(h_qt), btn_qt6);
+
+    gtk_box_append(GTK_BOX(vbox), h_qt);
+
     return vbox;
 }
 static GtkWidget *create_runcommand_page(GtkLabel *status_label)
@@ -2173,7 +2231,96 @@ static void on_open_users_manager(GtkButton *button, gpointer user_data)
     g_free(script);
 }
 
-static GtkWidget *create_users_page(GtkLabel *status_label)
+/* User action callbacks for list rows */
+typedef struct {
+    char *username;  /* allocated string, will be freed */
+    GtkLabel *status;
+} UserActionData;
+
+static void user_action_data_free(gpointer data, GClosure *closure)
+{
+    UserActionData *uad = (UserActionData *)data;
+    if (uad) {
+        g_free(uad->username);
+        g_free(uad);
+    }
+}
+
+static void on_user_delete_clicked(GtkButton *btn, gpointer user_data)
+{
+    UserActionData *data = user_data;
+    GtkWindow *parent = GTK_WINDOW(gtk_widget_get_ancestor(GTK_WIDGET(btn), GTK_TYPE_WINDOW));
+    GtkWindow *dialog = create_modal_window(parent, "Delete User");
+    GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    gtk_window_set_child(dialog, vbox);
+
+    GtkWidget *msg = gtk_label_new(NULL);
+    char msg_text[256];
+    snprintf(msg_text, sizeof(msg_text), "Delete user '%s'?", data->username);
+    gtk_label_set_text(GTK_LABEL(msg), msg_text);
+    gtk_box_append(GTK_BOX(vbox), msg);
+
+    GtkWidget *chk_remove_home = gtk_check_button_new_with_label("Remove home directory");
+    gtk_box_append(GTK_BOX(vbox), chk_remove_home);
+
+    GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+    GtkWidget *btn_ok = gtk_button_new_with_label("Delete");
+    GtkWidget *btn_cancel = gtk_button_new_with_label("Cancel");
+    gtk_box_append(GTK_BOX(hbox), btn_ok);
+    gtk_box_append(GTK_BOX(hbox), btn_cancel);
+    gtk_box_append(GTK_BOX(vbox), hbox);
+
+    gpointer *ud = g_new(gpointer, 4);
+    ud[0] = dialog;
+    ud[1] = g_strdup(data->username);
+    ud[2] = chk_remove_home;
+    ud[3] = data->status;
+
+    g_signal_connect(btn_ok, "clicked", G_CALLBACK(on_delete_user_submit), ud);
+    g_signal_connect(btn_cancel, "clicked", G_CALLBACK(on_delete_user_cancel), dialog);
+
+    gtk_window_present(dialog);
+}
+
+static void on_user_password_clicked(GtkButton *btn, gpointer user_data)
+{
+    UserActionData *data = user_data;
+    GtkWindow *parent = GTK_WINDOW(gtk_widget_get_ancestor(GTK_WIDGET(btn), GTK_TYPE_WINDOW));
+    GtkWindow *dialog = create_modal_window(parent, "Change Password");
+    GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    gtk_window_set_child(dialog, vbox);
+
+    GtkWidget *msg = gtk_label_new(NULL);
+    char msg_text[256];
+    snprintf(msg_text, sizeof(msg_text), "New password for '%s':", data->username);
+    gtk_label_set_text(GTK_LABEL(msg), msg_text);
+    gtk_box_append(GTK_BOX(vbox), msg);
+
+    GtkWidget *entry_pass = gtk_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(entry_pass), "new password");
+    gtk_entry_set_visibility(GTK_ENTRY(entry_pass), FALSE);
+    gtk_box_append(GTK_BOX(vbox), entry_pass);
+
+    GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+    GtkWidget *btn_ok = gtk_button_new_with_label("Change");
+    GtkWidget *btn_cancel = gtk_button_new_with_label("Cancel");
+    gtk_box_append(GTK_BOX(hbox), btn_ok);
+    gtk_box_append(GTK_BOX(hbox), btn_cancel);
+    gtk_box_append(GTK_BOX(vbox), hbox);
+
+    gpointer *ud = g_new(gpointer, 4);
+    ud[0] = dialog;
+    ud[1] = g_strdup(data->username);
+    ud[2] = entry_pass;
+    ud[3] = data->status;
+
+    g_signal_connect(btn_ok, "clicked", G_CALLBACK(on_change_pass_submit), ud);
+    g_signal_connect(btn_cancel, "clicked", G_CALLBACK(on_change_pass_cancel), dialog);
+
+    gtk_window_present(dialog);
+}
+
+static GtkWidget *create_users_page(GtkWindow *parent, GtkLabel *status_label)
 {
     GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
     gtk_widget_set_margin_top(vbox, 12);
@@ -2185,22 +2332,56 @@ static GtkWidget *create_users_page(GtkLabel *status_label)
     gtk_widget_set_halign(label, GTK_ALIGN_START);
     gtk_box_append(GTK_BOX(vbox), label);
 
-    GtkWidget *btn_add = gtk_button_new_with_label("Add User");
-    g_signal_connect(btn_add, "clicked", G_CALLBACK(open_add_user_dialog), status_label);
-    gtk_box_append(GTK_BOX(vbox), btn_add);
+    /* Scrolled window for user list */
+    GtkWidget *scroller = gtk_scrolled_window_new();
+    gtk_widget_set_vexpand(scroller, TRUE);
+    gtk_widget_set_hexpand(scroller, TRUE);
+    gtk_box_append(GTK_BOX(vbox), scroller);
 
-    GtkWidget *btn_delete = gtk_button_new_with_label("Delete User");
-    g_signal_connect(btn_delete, "clicked", G_CALLBACK(open_delete_user_dialog), status_label);
-    gtk_box_append(GTK_BOX(vbox), btn_delete);
+    GtkWidget *user_list = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroller), user_list);
 
-    GtkWidget *btn_pass = gtk_button_new_with_label("Change Password");
-    g_signal_connect(btn_pass, "clicked", G_CALLBACK(open_change_pass_dialog), status_label);
-    gtk_box_append(GTK_BOX(vbox), btn_pass);
+    /* Populate user list from /etc/passwd */
+    struct passwd *pw;
+    setpwent();
+    while ((pw = getpwent()) != NULL) {
+        /* Skip system users (UID < 1000) */
+        if (pw->pw_uid < 1000) continue;
 
-    /* legacy script launcher (kept as fallback) */
-    GtkWidget *btn_legacy = gtk_button_new_with_label("Open TUI Users Manager (legacy)");
-    g_signal_connect(btn_legacy, "clicked", G_CALLBACK(on_open_users_manager), status_label);
-    gtk_box_append(GTK_BOX(vbox), btn_legacy);
+        GtkWidget *h = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+        gtk_widget_set_hexpand(h, TRUE);
+
+        GtkWidget *user_label = gtk_label_new(pw->pw_name);
+        gtk_widget_set_halign(user_label, GTK_ALIGN_START);
+        gtk_widget_set_hexpand(user_label, TRUE);
+        gtk_box_append(GTK_BOX(h), user_label);
+
+        GtkWidget *btn_pass = gtk_button_new_with_label("Change Password");
+        UserActionData *pass_data = g_new0(UserActionData, 1);
+        pass_data->username = g_strdup(pw->pw_name);
+        pass_data->status = status_label;
+        g_signal_connect_data(btn_pass, "clicked", G_CALLBACK(on_user_password_clicked), pass_data, user_action_data_free, 0);
+        gtk_box_append(GTK_BOX(h), btn_pass);
+
+        GtkWidget *btn_delete = gtk_button_new_with_label("Delete");
+        UserActionData *del_data = g_new0(UserActionData, 1);
+        del_data->username = g_strdup(pw->pw_name);
+        del_data->status = status_label;
+        g_signal_connect_data(btn_delete, "clicked", G_CALLBACK(on_user_delete_clicked), del_data, user_action_data_free, 0);
+        gtk_box_append(GTK_BOX(h), btn_delete);
+
+        gtk_box_append(GTK_BOX(user_list), h);
+    }
+    endpwent();
+
+    /* New User button at bottom */
+    GtkWidget *h_new = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    GtkWidget *btn_new = gtk_button_new_with_label("New User");
+    gtk_widget_set_hexpand(btn_new, TRUE);
+    g_signal_connect(btn_new, "clicked", G_CALLBACK(open_add_user_dialog), status_label);
+    gtk_box_append(GTK_BOX(h_new), btn_new);
+    gtk_widget_set_halign(h_new, GTK_ALIGN_FILL);
+    gtk_box_append(GTK_BOX(vbox), h_new);
 
     return vbox;
 }
@@ -2583,7 +2764,7 @@ static void on_activate(GApplication *app, gpointer user_data)
 
     GtkWidget *sysinfo_page = create_systeminfo_page();
     GtkWidget *pkg_page = create_packages_page(window, GTK_LABEL(status_label));
-    GtkWidget *users_page = create_users_page(GTK_LABEL(status_label));
+    GtkWidget *users_page = create_users_page(window, GTK_LABEL(status_label));
     GtkWidget *appearance_page = create_appearance_page(GTK_LABEL(status_label));
     GtkWidget *hyprland_page = create_hyprland_page(GTK_LABEL(status_label));
     GtkWidget *devices_page = create_devices_page(GTK_LABEL(status_label));
