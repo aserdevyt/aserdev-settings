@@ -10,7 +10,25 @@ include_directories(${GTK4_INCLUDE_DIRS})
 link_directories(${GTK4_LIBRARY_DIRS})
 add_definitions(${GTK4_CFLAGS_OTHER})
 
-add_executable(aser-settings main.c hypr.c)
+add_executable(aser-settings 
+    main.c 
+    hypr.c 
+    common.c
+    pages/appearance.c
+    pages/clipboard.c
+    pages/screenrec.c
+    pages/rofi.c
+    pages/audio.c
+    pages/devices.c
+    pages/disks.c
+    pages/runcommand.c
+    pages/defaultapps.c
+    pages/binds.c
+    pages/packages.c
+    pages/users.c
+    pages/config.c
+    pages/systeminfo.c
+)
 
 target_compile_options(aser-settings PRIVATE ${GTK4_CFLAGS_OTHER})
 target_include_directories(aser-settings PRIVATE ${GTK4_INCLUDE_DIRS} .)
