@@ -36,7 +36,7 @@ static void on_row_selected(GtkListBox *list, GtkListBoxRow *row, GtkStack *stac
     int index = gtk_list_box_row_get_index(row);
     const char *names[] = {
         "System Info",
-        "Packages",
+        "Software Updates",
         "Users",
         "Appearance",
         "Hyprland",
@@ -77,7 +77,7 @@ static void on_activate(GApplication *app, gpointer user_data)
     gtk_list_box_set_selection_mode(GTK_LIST_BOX(list), GTK_SELECTION_SINGLE);
 
     GtkWidget *row_sysinfo = gtk_label_new("System Info");
-    GtkWidget *row1 = gtk_label_new("Packages");
+    GtkWidget *row1 = gtk_label_new("Software Updates");
     GtkWidget *row2 = gtk_label_new("Users");
     GtkWidget *row3 = gtk_label_new("Appearance");
     GtkWidget *row_hypr = gtk_label_new("Hyprland");
@@ -139,7 +139,7 @@ static void on_activate(GApplication *app, gpointer user_data)
 
     /* Add pages to stack */
     gtk_stack_add_named(GTK_STACK(stack), sysinfo_page, "System Info");
-    gtk_stack_add_named(GTK_STACK(stack), pkg_page, "Packages");
+    gtk_stack_add_named(GTK_STACK(stack), pkg_page, "Software Updates");
     gtk_stack_add_named(GTK_STACK(stack), users_page, "Users");
     gtk_stack_add_named(GTK_STACK(stack), appearance_page, "Appearance");
     gtk_stack_add_named(GTK_STACK(stack), hyprland_page, "Hyprland");

@@ -1,59 +1,155 @@
 #include "../common.h"
 #include <gtk/gtk.h>
 
+/*
+ * Software Updates page
+ * - large non-editable textview showing `yay -Qu`
+ * - Refresh button: runs `yay -Syu --devel --timeupdate --needed --noconfirm`,
+ *   waits for completion, then refreshes the text view
+ * - Run /bin/update in a terminal button
+ */
+
 typedef struct {
-    GtkWindow  *parent;
-    GtkEntry   *entry;
-    GtkLabel   *status_label;
-} PackageActionData;
+    GtkTextView *tv;
+    GtkLabel    *status;
+} UpdatesRefreshData;
 
-static void on_package_action(GtkButton *button, gpointer user_data)
+typedef struct {
+    GtkTextView *tv;
+    GtkLabel    *status;
+    gchar       *text;
+} UISetData;
+
+static gboolean ui_set_text_cb(gpointer user_data)
 {
-    PackageActionData *d = (PackageActionData *)user_data;
-    const char *action = (const char *)g_object_get_data(G_OBJECT(button), "action");
-    const char *pkg = gtk_editable_get_text(GTK_EDITABLE(d->entry));
+    UISetData *d = (UISetData *)user_data;
+    GtkTextBuffer *buf = gtk_text_view_get_buffer(d->tv);
+    gtk_text_buffer_set_text(buf, d->text ? d->text : "", -1);
+    set_status(d->status, "Updated list");
+    g_free(d->text);
+    g_free(d);
+    return G_SOURCE_REMOVE;
+}
 
-    if (!pkg || strlen(pkg) == 0) {
-        set_status(d->status_label, "Please enter a package name.");
-        return;
+/* Thread: run `yay -Qu` and post results to UI */
+static gpointer refresh_list_thread(gpointer user_data)
+{
+    UpdatesRefreshData *d = (UpdatesRefreshData *)user_data;
+
+    if (g_dry_run) {
+        UISetData *ud = g_new0(UISetData, 1);
+        ud->tv = d->tv;
+        ud->status = d->status;
+        ud->text = g_strdup("Dry run: not executing 'yay -Qu'\n");
+        g_idle_add(ui_set_text_cb, ud);
+        g_free(d);
+        return NULL;
     }
 
-    gboolean execute = !g_dry_run; /* execute unless running in --dry-run mode */
-    char *cmd = NULL;
+    gchar *out = NULL, *err = NULL;
+    gint exit_status = 0;
+    GError *error = NULL;
 
-    if (g_strcmp0(action, "aur") == 0) {
-        char *prefix = get_terminal_prefix();
-        char *quoted = g_shell_quote(pkg);
-        cmd = g_strdup_printf(prefix, g_strdup_printf("yay -S --needed --noconfirm %s", quoted));
-        g_free(prefix);
-        g_free(quoted);
-    } else if (g_strcmp0(action, "pacman") == 0) {
-        char *prefix = get_terminal_prefix();
-        char *quoted = g_shell_quote(pkg);
-        cmd = g_strdup_printf(prefix, g_strdup_printf("sudo pacman -S --noconfirm %s", quoted));
-        g_free(prefix);
-        g_free(quoted);
-    } else if (g_strcmp0(action, "flatpak") == 0) {
-        char *prefix = get_terminal_prefix();
-        char *quoted = g_shell_quote(pkg);
-        cmd = g_strdup_printf(prefix, g_strdup_printf("flatpak install -y flathub %s", quoted));
-        g_free(prefix);
-        g_free(quoted);
-    } else if (g_strcmp0(action, "update_aur_flatpak") == 0) {
-        char *prefix = get_terminal_prefix();
-        cmd = g_strdup_printf(prefix, "yay -Syu && flatpak update -y");
-        g_free(prefix);
+    gboolean ok = g_spawn_command_line_sync("yay -Qu", &out, &err, &exit_status, &error);
+    gchar *text = NULL;
+    if (!ok) {
+        text = g_strdup_printf("Failed to run 'yay -Qu': %s\n", error ? error->message : "unknown");
     } else {
-        cmd = g_strdup("echo unknown-action");
+        if (out && *out) {
+            text = g_strdup(out);
+        } else {
+            text = g_strdup("No updates available\n");
+        }
     }
 
-    if (!execute) {
-        set_status(d->status_label, "Dry run: %s", cmd);
-        g_free(cmd);
+    UISetData *ud = g_new0(UISetData, 1);
+    ud->tv = d->tv;
+    ud->status = d->status;
+    ud->text = text;
+    g_idle_add(ui_set_text_cb, ud);
+
+    if (out) g_free(out);
+    if (err) g_free(err);
+    if (error) g_clear_error(&error);
+    g_free(d);
+    return NULL;
+}
+
+static void start_refresh_list(GtkTextView *tv, GtkLabel *status)
+{
+    UpdatesRefreshData *d = g_new0(UpdatesRefreshData, 1);
+    d->tv = tv;
+    d->status = status;
+    g_thread_new("updates-refresh", refresh_list_thread, d);
+}
+
+/* Thread: run the long update command then refresh the list */
+static gpointer run_update_then_refresh_thread(gpointer user_data)
+{
+    UpdatesRefreshData *d = (UpdatesRefreshData *)user_data;
+
+    if (g_dry_run) {
+        g_idle_add((GSourceFunc)ui_set_text_cb, g_new0(UISetData, 1));
+        set_status(d->status, "Dry run: skip running updates");
+        g_free(d);
+        return NULL;
+    }
+
+    gchar *out = NULL, *err = NULL;
+    gint exit_status = 0;
+    GError *error = NULL;
+
+    set_status(d->status, "Running full system update (yay)...");
+    gboolean ok = g_spawn_command_line_sync("yay -Syu --devel --timeupdate --needed --noconfirm", &out, &err, &exit_status, &error);
+
+    if (!ok) {
+        set_status(d->status, "Update failed to start: %s", error ? error->message : "unknown");
+    } else if (exit_status != 0) {
+        set_status(d->status, "Update command finished with exit %d", exit_status);
+    } else {
+        set_status(d->status, "Update completed successfully");
+    }
+
+    if (out) g_free(out);
+    if (err) g_free(err);
+    if (error) g_clear_error(&error);
+
+    /* Refresh the list when done */
+    UpdatesRefreshData *next = g_new0(UpdatesRefreshData, 1);
+    next->tv = d->tv;
+    next->status = d->status;
+    g_thread_new("updates-refresh-after", refresh_list_thread, next);
+
+    g_free(d);
+    return NULL;
+}
+
+/* UI callbacks */
+static void on_refresh_clicked(GtkButton *btn, gpointer user_data)
+{
+    UpdatesRefreshData *d = (UpdatesRefreshData *)user_data;
+    if (g_dry_run) {
+        set_status(d->status, "Dry run: not performing update");
+        return;
+    }
+    UpdatesRefreshData *copy = g_new0(UpdatesRefreshData, 1);
+    copy->tv = d->tv;
+    copy->status = d->status;
+    g_thread_new("run-update-thread", run_update_then_refresh_thread, copy);
+}
+
+static void on_run_update_terminal(GtkButton *btn, gpointer user_data)
+{
+    UpdatesRefreshData *d = (UpdatesRefreshData *)user_data;
+    if (g_dry_run) {
+        set_status(d->status, "Dry run: would open terminal to run /bin/update");
         return;
     }
 
-    run_command_and_report(cmd, d->status_label);
+    char *prefix = get_terminal_prefix();
+    char *cmd = g_strdup_printf(prefix, "/bin/update");
+    run_command_and_report(cmd, d->status);
+    g_free(prefix);
     g_free(cmd);
 }
 
@@ -65,33 +161,40 @@ GtkWidget *create_packages_page(GtkWindow *parent, GtkLabel *status_label)
     gtk_widget_set_margin_start(vbox, 12);
     gtk_widget_set_margin_end(vbox, 12);
 
-    GtkWidget *label = gtk_label_new("Package name:");
-    gtk_widget_set_halign(label, GTK_ALIGN_START);
-    gtk_box_append(GTK_BOX(vbox), label);
+    /* Large non-editable textview inside scrolled window */
+    GtkWidget *sc = gtk_scrolled_window_new();
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sc), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+    gtk_widget_set_vexpand(sc, TRUE);
 
-    GtkWidget *entry = gtk_entry_new();
-    gtk_entry_set_placeholder_text(GTK_ENTRY(entry), "e.g. firefox");
-    gtk_box_append(GTK_BOX(vbox), entry);
+    GtkWidget *tv = gtk_text_view_new();
+    gtk_text_view_set_editable(GTK_TEXT_VIEW(tv), FALSE);
+    gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(tv), GTK_WRAP_WORD_CHAR);
+    gtk_widget_set_hexpand(tv, TRUE);
+    gtk_widget_set_vexpand(tv, TRUE);
 
-    GtkWidget *grid = gtk_grid_new();
-    gtk_grid_set_row_spacing(GTK_GRID(grid), 6);
-    gtk_grid_set_column_spacing(GTK_GRID(grid), 6);
-    gtk_box_append(GTK_BOX(vbox), grid);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(sc), tv);
+    gtk_box_append(GTK_BOX(vbox), sc);
 
-    const char *btn_labels[] = {"Install (AUR)", "Install (Pacman)", "Install (Flatpak)", "Update (AUR + Flatpak)"};
-    const char *actions[] = {"aur", "pacman", "flatpak", "update_aur_flatpak"};
+    /* Buttons at bottom: Refresh (runs full update) and Run /bin/update in terminal */
+    GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+    gtk_widget_set_halign(hbox, GTK_ALIGN_END);
 
-    PackageActionData *pdata = g_new0(PackageActionData, 1);
-    pdata->parent = parent;
-    pdata->entry = GTK_ENTRY(entry);
-    pdata->status_label = status_label;
+    UpdatesRefreshData *d = g_new0(UpdatesRefreshData, 1);
+    d->tv = GTK_TEXT_VIEW(tv);
+    d->status = status_label;
 
-    for (int i = 0; i < 4; i++) {
-        GtkWidget *btn = gtk_button_new_with_label(btn_labels[i]);
-        g_object_set_data_full(G_OBJECT(btn), "action", g_strdup(actions[i]), g_free);
-        g_signal_connect(btn, "clicked", G_CALLBACK(on_package_action), pdata);
-        gtk_grid_attach(GTK_GRID(grid), btn, i % 2, i / 2, 1, 1);
-    }
+    GtkWidget *btn_refresh = gtk_button_new_with_label("Refresh (Run system update)");
+    g_signal_connect(btn_refresh, "clicked", G_CALLBACK(on_refresh_clicked), d);
+    gtk_box_append(GTK_BOX(hbox), btn_refresh);
+
+    GtkWidget *btn_terminal = gtk_button_new_with_label("Run /bin/update in terminal");
+    g_signal_connect(btn_terminal, "clicked", G_CALLBACK(on_run_update_terminal), d);
+    gtk_box_append(GTK_BOX(hbox), btn_terminal);
+
+    gtk_box_append(GTK_BOX(vbox), hbox);
+
+    /* Initial population */
+    start_refresh_list(GTK_TEXT_VIEW(tv), status_label);
 
     return vbox;
 }
