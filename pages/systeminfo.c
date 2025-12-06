@@ -3,6 +3,7 @@
 
 GtkWidget *create_systeminfo_page(void)
 {
+    DBG("create_systeminfo_page called");
     GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
     gtk_widget_set_margin_top(vbox, 12);
     gtk_widget_set_margin_bottom(vbox, 12);

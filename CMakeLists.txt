@@ -30,6 +30,6 @@ add_executable(aser-settings
     pages/systeminfo.c
 )
 
-target_compile_options(aser-settings PRIVATE ${GTK4_CFLAGS_OTHER})
+target_compile_options(aser-settings PRIVATE ${GTK4_CFLAGS_OTHER} -DDEBUG_ENABLE)
 target_include_directories(aser-settings PRIVATE ${GTK4_INCLUDE_DIRS} .)
 target_link_libraries(aser-settings ${GTK4_LIBRARIES})

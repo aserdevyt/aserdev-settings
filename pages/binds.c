@@ -295,6 +295,7 @@ static void on_save_binds_clicked(GtkButton *btn, gpointer user_data)
 
 GtkWidget *create_binds_page(GtkLabel *status_label)
 {
+    DBG("create_binds_page called");
     static gboolean css_installed = FALSE;
     if (!css_installed) {
         GtkCssProvider *prov = gtk_css_provider_new();

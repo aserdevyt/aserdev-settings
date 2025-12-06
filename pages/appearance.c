@@ -89,6 +89,7 @@ static gboolean apply_gtk_settings(const char *setting_name, const char *value, 
 
 static void on_run_waypaper(GtkButton *button, gpointer user_data)
 {
+    DBG("on_run_waypaper called");
     GtkLabel *status = GTK_LABEL(user_data);
     const char *cmd = "waypaper";
     run_command_and_report(cmd, status);
@@ -96,6 +97,7 @@ static void on_run_waypaper(GtkButton *button, gpointer user_data)
 
 static void on_set_theme_clicked(GtkButton *btn, gpointer user_data)
 {
+    DBG("on_set_theme_clicked called");
     ThemeSetData *d = user_data;
     GtkComboBoxText *cb = d->cb;
     GtkEntry *entry = d->entry;
@@ -211,6 +213,7 @@ static void on_launch_button_clicked(GtkButton *btn, gpointer user_data)
 
 GtkWidget *create_appearance_page(GtkLabel *status_label)
 {
+    DBG("create_appearance_page called");
     GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
     gtk_widget_set_margin_top(vbox, 12);
     gtk_widget_set_margin_bottom(vbox, 12);

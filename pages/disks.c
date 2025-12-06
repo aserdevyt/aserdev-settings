@@ -4,6 +4,7 @@
 /* Populate a GtkTextView with lsblk output */
 static void populate_disks_text(GtkTextView *tv)
 {
+    DBG("populate_disks_text called");
     if (!tv) return;
     GString *outbuf = g_string_new(NULL);
 
@@ -66,6 +67,7 @@ static void populate_disks_text(GtkTextView *tv)
 
 static void on_disks_refresh_clicked(GtkButton *btn, gpointer user_data)
 {
+    DBG("on_disks_refresh_clicked called");
     GtkTextView *tv = GTK_TEXT_VIEW(user_data);
     populate_disks_text(tv);
 }
@@ -84,6 +86,7 @@ static void on_gnome_disks_clicked(GtkButton *btn, gpointer user_data)
 
 GtkWidget *create_disks_page(GtkLabel *status_label)
 {
+    DBG("create_disks_page called");
     GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
     gtk_widget_set_margin_top(vbox, 12);
     gtk_widget_set_margin_bottom(vbox, 12);

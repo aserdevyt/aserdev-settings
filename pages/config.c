@@ -4,6 +4,7 @@
 /* Adapter: button clicked -> open config dir stored on the button */
 static void on_config_button_clicked(GtkButton *btn, gpointer user_data)
 {
+    DBG("on_config_button_clicked called");
     const char *subdir = g_object_get_data(G_OBJECT(btn), "config-subdir");
     GtkLabel *status = GTK_LABEL(g_object_get_data(G_OBJECT(btn), "status"));
     if (!subdir) return;
@@ -27,6 +28,7 @@ static void config_launch_button(GtkButton *btn, gpointer user_data)
 
 GtkWidget *create_config_page(GtkLabel *status_label)
 {
+    DBG("create_config_page called");
     GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
     gtk_widget_set_margin_top(vbox, 12);
     gtk_widget_set_margin_bottom(vbox, 12);

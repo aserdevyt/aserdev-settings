@@ -326,6 +326,7 @@ static void on_open_pavu(GtkButton *btn, gpointer user_data)
 
 GtkWidget *create_audio_page(GtkLabel *status_label)
 {
+    DBG("create_audio_page called");
     GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
     gtk_widget_set_margin_top(vbox, 12);
     gtk_widget_set_margin_bottom(vbox, 12);

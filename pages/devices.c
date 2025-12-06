@@ -4,6 +4,7 @@
 /* Populate a GtkTextView with lspci -k output and lsusb output (if available). */
 static void populate_devices_text(GtkTextView *tv)
 {
+    DBG("populate_devices_text called");
     if (!tv) return;
     GString *outbuf = g_string_new(NULL);
 
@@ -59,12 +60,14 @@ static void populate_devices_text(GtkTextView *tv)
 
 static void on_devices_refresh_clicked(GtkButton *btn, gpointer user_data)
 {
+    DBG("on_devices_refresh_clicked called");
     GtkTextView *tv = GTK_TEXT_VIEW(user_data);
     populate_devices_text(tv);
 }
 
 GtkWidget *create_devices_page(GtkLabel *status_label)
 {
+    DBG("create_devices_page called");
     GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
     gtk_widget_set_margin_top(vbox, 12);
     gtk_widget_set_margin_bottom(vbox, 12);

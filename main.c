@@ -20,7 +20,6 @@
 #include "pages/appearance.h"
 #include "pages/devices.h"
 #include "pages/disks.h"
-#include "pages/clipboard.h"
 #include "pages/screenrec.h"
 #include "pages/rofi.h"
 #include "pages/binds.h"
@@ -33,6 +32,7 @@
 static void on_row_selected(GtkListBox *list, GtkListBoxRow *row, GtkStack *stack)
 {
     if (!row) return;
+    DBG("row-selected called, row=%p", row);
     int index = gtk_list_box_row_get_index(row);
     const char *names[] = {
         "System Info",
@@ -43,7 +43,6 @@ static void on_row_selected(GtkListBox *list, GtkListBoxRow *row, GtkStack *stac
         "Audio",
         "Devices",
         "Disks",
-        "Clipboard",
         "Screen Recording",
         "Binds",
         "Run Command",
@@ -59,6 +58,7 @@ static void on_row_selected(GtkListBox *list, GtkListBoxRow *row, GtkStack *stac
 /* Main application activation */
 static void on_activate(GApplication *app, gpointer user_data)
 {
+    DBG("on_activate called");
     GtkWindow *window = GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(app)));
     gtk_window_set_title(window, "AserDev Settings");
     gtk_window_set_default_size(window, 900, 520);
@@ -84,7 +84,7 @@ static void on_activate(GApplication *app, gpointer user_data)
     GtkWidget *row_audio = gtk_label_new("Audio");
     GtkWidget *row_devices = gtk_label_new("Devices");
     GtkWidget *row_disks = gtk_label_new("Disks");
-    GtkWidget *row4 = gtk_label_new("Clipboard");
+    /* Clipboard page removed */
     GtkWidget *row5 = gtk_label_new("Screen Recording");
     GtkWidget *row6 = gtk_label_new("Binds");
     GtkWidget *row7 = gtk_label_new("Default Apps");
@@ -98,7 +98,7 @@ static void on_activate(GApplication *app, gpointer user_data)
     gtk_list_box_insert(GTK_LIST_BOX(list), row_audio, -1);
     gtk_list_box_insert(GTK_LIST_BOX(list), row_devices, -1);
     gtk_list_box_insert(GTK_LIST_BOX(list), row_disks, -1);
-    gtk_list_box_insert(GTK_LIST_BOX(list), row4, -1);
+    /* clipboard row removed */
     gtk_list_box_insert(GTK_LIST_BOX(list), row5, -1);
     gtk_list_box_insert(GTK_LIST_BOX(list), row6, -1);
     gtk_list_box_insert(GTK_LIST_BOX(list), row7, -1);
@@ -130,7 +130,6 @@ static void on_activate(GApplication *app, gpointer user_data)
     GtkWidget *audio_page = create_audio_page(GTK_LABEL(status_label));
     GtkWidget *devices_page = create_devices_page(GTK_LABEL(status_label));
     GtkWidget *disks_page = create_disks_page(GTK_LABEL(status_label));
-    GtkWidget *clipboard_page = create_clipboard_page(GTK_LABEL(status_label));
     GtkWidget *screenrec_page = create_screenrec_page(GTK_LABEL(status_label));
     GtkWidget *binds_page = create_binds_page(GTK_LABEL(status_label));
     GtkWidget *runcommand_page = create_runcommand_page(GTK_LABEL(status_label));
@@ -146,7 +145,7 @@ static void on_activate(GApplication *app, gpointer user_data)
     gtk_stack_add_named(GTK_STACK(stack), audio_page, "Audio");
     gtk_stack_add_named(GTK_STACK(stack), devices_page, "Devices");
     gtk_stack_add_named(GTK_STACK(stack), disks_page, "Disks");
-    gtk_stack_add_named(GTK_STACK(stack), clipboard_page, "Clipboard");
+    /* clipboard page removed from stack */
     gtk_stack_add_named(GTK_STACK(stack), screenrec_page, "Screen Recording");
     gtk_stack_add_named(GTK_STACK(stack), binds_page, "Binds");
     gtk_stack_add_named(GTK_STACK(stack), runcommand_page, "Run Command");
@@ -163,6 +162,7 @@ static void on_activate(GApplication *app, gpointer user_data)
     gtk_list_box_select_row(GTK_LIST_BOX(list), first);
 
     gtk_window_present(window);
+    DBG("main window presented");
 }
 
 int main(int argc, char **argv)

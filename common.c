@@ -9,6 +9,9 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <sys/wait.h>
+#include <time.h>
+#include <stdarg.h>
+#include <errno.h>
 
 /* global flag: if true, commands are dry-run only */
 gboolean g_dry_run = FALSE;
@@ -305,6 +308,29 @@ gboolean run_privileged_script(const char *script_contents, GtkLabel *status)
 {
     return run_command_via_pkexec_stdin(script_contents, status);
 }
+
+#ifdef DEBUG_ENABLE
+void debug_log(const char *file, int line, const char *fmt, ...)
+{
+    va_list ap;
+    char *msg = NULL;
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    time_t sec = ts.tv_sec;
+    struct tm tm;
+    localtime_r(&sec, &tm);
+    char timebuf[64];
+    strftime(timebuf, sizeof(timebuf), "%Y-%m-%d %H:%M:%S", &tm);
+
+    va_start(ap, fmt);
+    msg = g_strdup_vprintf(fmt, ap);
+    va_end(ap);
+
+    fprintf(stderr, "[%s.%03ld] DEBUG %s:%d: %s\n", timebuf, ts.tv_nsec / 1000000, file, line, msg);
+    fflush(stderr);
+    g_free(msg);
+}
+#endif
 
 gboolean run_command_via_pkexec_stdin(const char *command, GtkLabel *status)
 {

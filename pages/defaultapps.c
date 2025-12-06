@@ -34,6 +34,7 @@ static char *query_xdg_mime_default(const char *mime)
 
 static void on_default_apps_apply(GtkButton *btn, gpointer user_data)
 {
+    DBG("on_default_apps_apply called");
     gpointer *ud = user_data;
     GtkEntry *entry_term = GTK_ENTRY(ud[0]);
     GtkEntry *entry_fm = GTK_ENTRY(ud[1]);
@@ -158,6 +159,7 @@ static void on_choose_desktop_clicked(GtkButton *btn, gpointer user_data)
 
 GtkWidget *create_defaultapps_page(GtkLabel *status_label)
 {
+    DBG("create_defaultapps_page called");
     GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
     gtk_widget_set_margin_top(vbox, 12);
     gtk_widget_set_margin_bottom(vbox, 12);

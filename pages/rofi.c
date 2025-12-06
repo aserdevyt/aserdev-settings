@@ -4,18 +4,21 @@
 /* Emoji and rofi */
 static void on_rofi_emoji(GtkButton *btn, gpointer user_data)
 {
+    DBG("on_rofi_emoji called");
     GtkLabel *status = GTK_LABEL(user_data);
     run_command_and_report("rofi -show emoji", status);
 }
 
 static void on_rofi_drun(GtkButton *btn, gpointer user_data)
 {
+    DBG("on_rofi_drun called");
     GtkLabel *status = GTK_LABEL(user_data);
     run_command_and_report("rofi -show drun", status);
 }
 
 GtkWidget *create_emoji_page(GtkLabel *status_label)
 {
+    DBG("create_emoji_page called");
     GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
     gtk_widget_set_margin_top(vbox, 12);
     gtk_widget_set_margin_bottom(vbox, 12);
@@ -35,6 +38,7 @@ GtkWidget *create_emoji_page(GtkLabel *status_label)
 
 GtkWidget *create_runapp_page(GtkLabel *status_label)
 {
+    DBG("create_runapp_page called");
     GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
     gtk_widget_set_margin_top(vbox, 12);
     gtk_widget_set_margin_bottom(vbox, 12);

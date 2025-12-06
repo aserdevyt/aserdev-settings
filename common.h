@@ -4,6 +4,14 @@
 #include <gtk/gtk.h>
 #include <glib.h>
 
+/* Debug logging macro: prints to stderr with file:line prefix when DEBUG_ENABLE is set */
+#ifdef DEBUG_ENABLE
+#define DBG(fmt, ...) debug_log(__FILE__, __LINE__, fmt, ##__VA_ARGS__)
+void debug_log(const char *file, int line, const char *fmt, ...);
+#else
+#define DBG(fmt, ...) do { } while (0)
+#endif
+
 /* Global flag for dry-run mode */
 extern gboolean g_dry_run;
 

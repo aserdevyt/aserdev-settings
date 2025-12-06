@@ -4,6 +4,7 @@
 /* Run Command page: ask for command and optionally run as root inside a terminal */
 static void on_run_command_clicked(GtkButton *btn, gpointer user_data)
 {
+    DBG("on_run_command_clicked called");
     gpointer *ud = user_data;
     GtkEntry *entry = GTK_ENTRY(ud[0]);
     GtkCheckButton *chk_root = GTK_CHECK_BUTTON(ud[1]);
@@ -55,6 +56,7 @@ static void on_run_command_clicked(GtkButton *btn, gpointer user_data)
 
 GtkWidget *create_runcommand_page(GtkLabel *status_label)
 {
+    DBG("create_runcommand_page called");
     GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
     gtk_widget_set_margin_top(vbox, 12);
     gtk_widget_set_margin_bottom(vbox, 12);
